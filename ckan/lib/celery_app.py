@@ -36,7 +36,9 @@ if not config_file:
 config.read(config_file)
 
 
-sqlalchemy_url = ckan_config.get('sqlalchemy.url')
+sqlalchemy_url = os.environ.get('CKAN_SQLALCHEMY_URL', None)
+if not sqlalchemy_url:
+    sqlalchemy_url = ckan_config.get('sqlalchemy.url')
 if not sqlalchemy_url:
     sqlalchemy_url = config.get('app:main', 'sqlalchemy.url')
 
