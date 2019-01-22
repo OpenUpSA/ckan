@@ -60,7 +60,8 @@ def datapusher_submit(context, data_dict):
 
     datapusher_url = config.get('ckan.datapusher.url')
 
-    site_url = h.url_for('/', qualified=True)
+    site_url = config.get('ckan.site_url')
+    log.info("##### %s #####", site_url)
     callback_url = h.url_for('/api/3/action/datapusher_hook', qualified=True)
 
     user = p.toolkit.get_action('user_show')(context, {'id': context['user']})
@@ -114,24 +115,26 @@ def datapusher_submit(context, data_dict):
     p.toolkit.get_action('task_status_update')(context, task)
 
     try:
+        request_body = json.dumps({
+            'api_key': user['apikey'],
+             'job_type': 'push_to_datastore',
+             'result_url': callback_url,
+             'metadata': {
+                 'ignore_hash': data_dict.get('ignore_hash', False),
+                 'ckan_url': site_url,
+                 'resource_id': res_id,
+                 'set_url_type': data_dict.get('set_url_type', False),
+                 'task_created': task['last_updated'],
+                 'original_url': resource_dict.get('url'),
+             }
+         })
+        log.info("Sending task %s", request_body)
         r = requests.post(
             urlparse.urljoin(datapusher_url, 'job'),
             headers={
                 'Content-Type': 'application/json'
             },
-            data=json.dumps({
-                'api_key': user['apikey'],
-                'job_type': 'push_to_datastore',
-                'result_url': callback_url,
-                'metadata': {
-                    'ignore_hash': data_dict.get('ignore_hash', False),
-                    'ckan_url': site_url,
-                    'resource_id': res_id,
-                    'set_url_type': data_dict.get('set_url_type', False),
-                    'task_created': task['last_updated'],
-                    'original_url': resource_dict.get('url'),
-                }
-            }))
+            data=request_body)
         r.raise_for_status()
     except requests.exceptions.ConnectionError, e:
         error = {'message': 'Could not connect to DataPusher.',
@@ -288,8 +291,9 @@ def datapusher_status(context, data_dict):
             r.raise_for_status()
             job_detail = r.json()
         except (requests.exceptions.ConnectionError,
-                requests.exceptions.HTTPError):
-            job_detail = {'error': 'cannot connect to datapusher'}
+                requests.exceptions.HTTPError) as e:
+            log.exception(e)
+            job_detail = {'error': 'cannot connect to datapusher. More detail in the logs.'}
 
     return {
         'status': task['state'],
